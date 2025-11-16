@@ -3,14 +3,9 @@
 """
 UNSPSC Buyer Confirmation Portal - Enterprise Grade
 ===================================================
-
 A comprehensive Streamlit web portal for UNSPSC classification workflow:
 - Scenario 1: Buyer confirmation of pipeline classifications
 - Scenario 2: Real-time classification for new materials
-
-Author: UNSPSC Classification Team
-Version: 1.0
-Last Updated: 2025-01-16
 """
 
 import streamlit as st
@@ -23,12 +18,20 @@ import logging
 from typing import Optional, Dict, List, Tuple
 import json
 
-# Add the directory containing the pipeline to the path
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# =============================================================================
+# FILE PATH RESOLUTION (CRITICAL FIX)
+# =============================================================================
+# 1. Get the directory where the current script resides (e.g., /repo_root/unspsc-classifier-code)
+BASE_SCRIPT_DIR = Path(__file__).parent 
+# 2. Navigate up to the repository root (e.g., /repo_root/)
+REPO_ROOT = BASE_SCRIPT_DIR.parent 
 
-# Try to import the pipeline - will be imported dynamically
+# Add the script directory to the Python path for importing the pipeline
+sys.path.insert(0, str(BASE_SCRIPT_DIR))
+
+# Try to import the pipeline - for Scenario 2 (real-time classification)
 try:
-    from unspsc_classifier_v10 import UNSPSCPipeline, setup_logging, ClassificationResult
+    from unspsc_classifier_v10 import UNSPSCPipeline, ClassificationResult
     PIPELINE_AVAILABLE = True
 except ImportError:
     PIPELINE_AVAILABLE = False
@@ -46,165 +49,51 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# File paths
-DATA_DIR = Path("data")
+# File paths using the calculated REPO_ROOT
+# Input Data (located in the repository root)
+RESULTS_FILE = REPO_ROOT / "results.xlsx" 
+UNSPSC_CATALOG = REPO_ROOT / "unspsc_catalog.csv"
+
+# Output and Cache Directories (created in the Streamlit runtime environment)
 OUTPUT_DIR = Path("confirmed_results")
-RESULTS_FILE = DATA_DIR / "results.xlsx"
+CACHE_DIR = Path("cache")
 CONFIRMED_FILE = OUTPUT_DIR / "confirmed_materials.xlsx"
 FLAGGED_FILE = OUTPUT_DIR / "flagged_materials.xlsx"
-UNSPSC_CATALOG = DATA_DIR / "unspsc_catalog.csv"
-CACHE_DIR = Path("cache")
 
 # Create directories if they don't exist
-DATA_DIR.mkdir(exist_ok=True)
 OUTPUT_DIR.mkdir(exist_ok=True)
 CACHE_DIR.mkdir(exist_ok=True)
 
-# =============================================================================
-# Custom CSS for Professional Look
-# =============================================================================
-
+# Custom CSS (Left intact as it provides excellent enterprise styling)
 st.markdown("""
 <style>
-    /* Main container */
-    .main {
-        padding: 0rem 1rem;
-    }
-    
-    /* Headers */
-    h1 {
-        color: #1f4788;
-        padding-bottom: 1rem;
-        border-bottom: 3px solid #1f4788;
-    }
-    
-    h2 {
-        color: #2563eb;
-        margin-top: 2rem;
-    }
-    
-    h3 {
-        color: #3b82f6;
-    }
-    
-    /* Info boxes */
-    .stAlert {
-        border-radius: 0.5rem;
-    }
-    
-    /* Buttons */
-    .stButton>button {
-        border-radius: 0.5rem;
-        font-weight: 600;
-        border: 2px solid #2563eb;
-        transition: all 0.3s;
-    }
-    
-    .stButton>button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 4px 12px rgba(37, 99, 235, 0.4);
-    }
-    
-    /* Material card styling */
-    .material-card {
-        background: white;
-        padding: 1.5rem;
-        border-radius: 0.75rem;
-        border: 2px solid #e5e7eb;
-        margin: 1rem 0;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-    }
-    
-    .material-header {
-        font-size: 1.25rem;
-        font-weight: 700;
-        color: #1f4788;
-        margin-bottom: 0.5rem;
-    }
-    
-    .material-detail {
-        color: #6b7280;
-        margin: 0.25rem 0;
-    }
-    
-    .code-box {
-        background: #f3f4f6;
-        padding: 1rem;
-        border-radius: 0.5rem;
-        border-left: 4px solid #2563eb;
-        margin: 1rem 0;
-    }
-    
-    .code-title {
-        font-weight: 700;
-        color: #1f4788;
-        font-size: 1.1rem;
-    }
-    
-    .confidence-badge {
-        display: inline-block;
-        padding: 0.25rem 0.75rem;
-        border-radius: 1rem;
-        font-weight: 600;
-        font-size: 0.875rem;
-    }
-    
-    .confidence-high {
-        background: #10b981;
-        color: white;
-    }
-    
-    .confidence-medium {
-        background: #f59e0b;
-        color: white;
-    }
-    
-    .confidence-low {
-        background: #ef4444;
-        color: white;
-    }
-    
-    /* Sidebar */
-    .css-1d391kg {
-        background-color: #f8fafc;
-    }
-    
-    /* Metrics */
-    .metric-container {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        padding: 1rem;
-        border-radius: 0.75rem;
-        color: white;
-        text-align: center;
-    }
-    
-    .metric-value {
-        font-size: 2rem;
-        font-weight: 700;
-    }
-    
-    .metric-label {
-        font-size: 0.875rem;
-        opacity: 0.9;
-    }
-    
-    /* Status badges */
-    .status-confirmed {
-        color: #10b981;
-        font-weight: 600;
-    }
-    
-    .status-pending {
-        color: #f59e0b;
-        font-weight: 600;
-    }
-    
-    .status-flagged {
-        color: #ef4444;
-        font-weight: 600;
-    }
+    /* ... (Your full CSS code remains here) ... */
+    .main { padding: 0rem 1rem; }
+    h1 { color: #1f4788; padding-bottom: 1rem; border-bottom: 3px solid #1f4788; }
+    h2 { color: #2563eb; margin-top: 2rem; }
+    h3 { color: #3b82f6; }
+    .stAlert { border-radius: 0.5rem; }
+    .stButton>button { border-radius: 0.5rem; font-weight: 600; border: 2px solid #2563eb; transition: all 0.3s; }
+    .stButton>button:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(37, 99, 235, 0.4); }
+    .material-card { background: white; padding: 1.5rem; border-radius: 0.75rem; border: 2px solid #e5e7eb; margin: 1rem 0; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+    .material-header { font-size: 1.25rem; font-weight: 700; color: #1f4788; margin-bottom: 0.5rem; }
+    .material-detail { color: #6b7280; margin: 0.25rem 0; }
+    .code-box { background: #f3f4f6; padding: 1rem; border-radius: 0.5rem; border-left: 4px solid #2563eb; margin: 1rem 0; }
+    .code-title { font-weight: 700; color: #1f4788; font-size: 1.1rem; }
+    .confidence-badge { display: inline-block; padding: 0.25rem 0.75rem; border-radius: 1rem; font-weight: 600; font-size: 0.875rem; }
+    .confidence-high { background: #10b981; color: white; }
+    .confidence-medium { background: #f59e0b; color: white; }
+    .confidence-low { background: #ef4444; color: white; }
+    .css-1d391kg { background-color: #f8fafc; }
+    .metric-container { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 1rem; border-radius: 0.75rem; color: white; text-align: center; }
+    .metric-value { font-size: 2rem; font-weight: 700; }
+    .metric-label { font-size: 0.875rem; opacity: 0.9; }
+    .status-confirmed { color: #10b981; font-weight: 600; }
+    .status-pending { color: #f59e0b; font-weight: 600; }
+    .status-flagged { color: #ef4444; font-weight: 600; }
 </style>
 """, unsafe_allow_html=True)
+
 
 # =============================================================================
 # Utility Functions
@@ -227,16 +116,23 @@ def init_session_state():
 
 def load_results_data() -> Optional[pd.DataFrame]:
     """Load the classification results Excel file"""
+    
+    # Critical Fix: Check existence before trying to read
+    if not RESULTS_FILE.exists():
+        st.error(f"⚠️ Results file not found at: {RESULTS_FILE}")
+        st.info(f"Please ensure '{RESULTS_FILE.name}' is in the repository root.")
+        return None
+        
     try:
-        if RESULTS_FILE.exists():
-            df = pd.read_excel(RESULTS_FILE)
-            return df
-        else:
-            st.error(f"⚠️ Results file not found: {RESULTS_FILE}")
-            st.info("Please ensure the classification results file is placed in the 'data' folder.")
-            return None
+        df = pd.read_excel(RESULTS_FILE)
+        
+        # Clean up column names for robust searching
+        df.columns = df.columns.str.replace('[^A-Za-z0-9_]+', '', regex=True)
+        
+        return df
     except Exception as e:
-        st.error(f"❌ Error loading results: {str(e)}")
+        st.error(f"❌ Error reading results file: {str(e)}")
+        st.info("The file may be corrupted or missing 'openpyxl' dependency.")
         return None
 
 def load_confirmed_materials() -> pd.DataFrame:
@@ -270,18 +166,19 @@ def load_flagged_materials() -> pd.DataFrame:
         return pd.DataFrame()
 
 def save_confirmed_material(material_data: Dict, confirmed_code: str, confirmed_title: str, 
-                           buyer_name: str, comments: str = ""):
+                             buyer_name: str, comments: str = ""):
     """Save confirmed material to Excel"""
     try:
         confirmed_df = load_confirmed_materials()
         
+        # Use clean column names matching the DataFrame structure from load_results_data
         new_entry = {
             'Date_Confirmed': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             'Buyer_Name': buyer_name,
             'Material_Code': material_data.get('Material_Code', ''),
             'Material_Description': material_data.get('Material_Description', ''),
-            'Final_Recommendation': material_data.get('Final_Recommendation', ''),
-            'Commodity_Code': material_data.get('Commodity_Code', ''),
+            'Final_Recommendation': material_data.get('FinalRecommendation', ''), # Use clean column name
+            'Commodity_Code': material_data.get('CommodityCode', ''), # Use clean column name
             'Segment': material_data.get('Segment', ''),
             'Family': material_data.get('Family', ''),
             'Class': material_data.get('Class', ''),
@@ -301,7 +198,7 @@ def save_confirmed_material(material_data: Dict, confirmed_code: str, confirmed_
         return False
 
 def save_flagged_material(material_data: Dict, flag_reason: str, 
-                         buyer_name: str, comments: str = ""):
+                             buyer_name: str, comments: str = ""):
     """Save flagged material to Excel"""
     try:
         flagged_df = load_flagged_materials()
@@ -311,7 +208,7 @@ def save_flagged_material(material_data: Dict, flag_reason: str,
             'Buyer_Name': buyer_name,
             'Material_Code': material_data.get('Material_Code', ''),
             'Material_Description': material_data.get('Material_Description', ''),
-            'Final_Recommendation': material_data.get('Final_Recommendation', ''),
+            'Final_Recommendation': material_data.get('FinalRecommendation', ''),
             'Flag_Reason': flag_reason,
             'Buyer_Comments': comments
         }
@@ -331,48 +228,55 @@ def parse_recommendations(recommendations_str: str) -> List[Tuple[str, str]]:
         return []
     
     recommendations = []
-    lines = str(recommendations_str).split('\n')
+    # Ensure the input is treated as a string, splitting by lines
+    lines = str(recommendations_str).strip().split('\n')
     
     for line in lines:
         line = line.strip()
         if not line:
             continue
         
-        # Try to parse "CODE - TITLE" format
+        # Regex to handle formats like: CODE - TITLE (conf: X.XX, LLM) or just CODE - TITLE
         if ' - ' in line:
             parts = line.split(' - ', 1)
             code = parts[0].strip()
             title = parts[1].strip() if len(parts) > 1 else ""
             
-            # Remove confidence scores if present
+            # Remove confidence scores if present (e.g., "(conf: 0.95, gemini)")
+            if '(conf:' in title:
+                title = title.split('(conf:')[0].strip()
+            
+            # Remove generic confidence if present (e.g., "(confidence: 0.95)")
             if '(confidence:' in title:
                 title = title.split('(confidence:')[0].strip()
             
-            recommendations.append((code, title))
+            # Basic validation that the code is 8 digits
+            if code.isdigit() and len(code) == 8:
+                recommendations.append((code, title))
     
     return recommendations
 
 def search_material(results_df: pd.DataFrame, search_query: str) -> Optional[pd.Series]:
     """Search for material by code or description"""
-    search_query = search_query.strip()
+    search_query = search_query.strip().upper()
+    
+    # Normalize DataFrame columns used for search
+    df = results_df.copy()
+    df['Material_Code_Str'] = df['MaterialCode'].astype(str)
+    df['Material_Description_Upper'] = df['MaterialDescription'].astype(str).str.upper()
     
     # Try exact match on material code
-    if search_query.isdigit():
-        match = results_df[results_df['Material_Code'].astype(str) == search_query]
-        if not match.empty:
-            return match.iloc[0]
-    
-    # Try partial match on description
-    match = results_df[
-        results_df['Material_Description'].str.contains(search_query, case=False, na=False)
-    ]
+    match = df[df['Material_Code_Str'] == search_query]
     if not match.empty:
         return match.iloc[0]
     
-    # Try match on material code as string
-    match = results_df[
-        results_df['Material_Code'].astype(str).str.contains(search_query, case=False, na=False)
-    ]
+    # Try partial match on material code
+    match = df[df['Material_Code_Str'].str.contains(search_query, na=False)]
+    if not match.empty:
+        return match.iloc[0]
+    
+    # Try partial match on description
+    match = df[df['Material_Description_Upper'].str.contains(search_query, na=False)]
     if not match.empty:
         return match.iloc[0]
     
@@ -380,6 +284,11 @@ def search_material(results_df: pd.DataFrame, search_query: str) -> Optional[pd.
 
 def format_confidence(confidence: float) -> str:
     """Format confidence score with color coding"""
+    try:
+        confidence = float(confidence)
+    except (ValueError, TypeError):
+        confidence = 0.0
+
     if confidence >= 0.9:
         badge_class = "confidence-high"
         label = "High"
@@ -397,15 +306,21 @@ def format_confidence(confidence: float) -> str:
 # =============================================================================
 
 def run_pipeline_classification(material_code: str, material_description: str, 
-                                po_text: str = "", item_detail: str = "") -> Optional[ClassificationResult]:
+                                 po_text: str = "", item_detail: str = "") -> Optional[ClassificationResult]:
     """Run the classification pipeline for a new material"""
     if not PIPELINE_AVAILABLE:
         st.error("❌ Classification pipeline is not available. Please check installation.")
         return None
     
+    # Critical Fix: Ensure UNSPSC_CATALOG file exists before running the pipeline
+    if not UNSPSC_CATALOG.exists():
+        st.error(f"❌ UNSPSC Catalog file not found at: {UNSPSC_CATALOG}")
+        st.info("The real-time classification pipeline cannot run without the full UNSPSC catalog.")
+        return None
+        
     try:
         with st.spinner("🔄 Running classification pipeline... This may take 30-60 seconds..."):
-            # Initialize pipeline
+            # Initialize pipeline (uses local catalog and cache)
             pipeline = UNSPSCPipeline(
                 unspsc_csv_path=str(UNSPSC_CATALOG),
                 cache_file=str(CACHE_DIR / "cache.jsonl")
@@ -504,8 +419,9 @@ def main():
     
     # Sidebar
     with st.sidebar:
+        # Placeholder image based on K-Electric
         st.image("https://via.placeholder.com/150x50/1f4788/ffffff?text=K-Electric", 
-                use_column_width=True)
+                 use_column_width=True)
         st.markdown("### 👤 Buyer Information")
         
         buyer_name = st.text_input("Your Name", value="", key="buyer_name")
@@ -553,7 +469,32 @@ def main():
             3. Click "Find UNSPSC Code"
             4. Review and confirm results
             """)
-    
+        
+        # Reporting Feature (Download Confirmed Data)
+        st.markdown("---")
+        st.markdown("### 💾 Report Download")
+
+        @st.cache_data
+        def convert_df_to_excel(df):
+            # IMPORTANT: Cache the conversion to prevent computation on every rerun
+            output = io.BytesIO()
+            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                df.to_excel(writer, index=False, sheet_name='Confirmed UNSPSC')
+            return output.getvalue()
+
+        import io
+        excel_data = convert_df_to_excel(confirmed_df)
+
+        st.download_button(
+            label=f"⬇️ Download Confirmed Materials ({len(confirmed_df)} rows)",
+            data=excel_data,
+            file_name='confirmed_unspsc_output.xlsx',
+            mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            type="secondary",
+            use_container_width=True
+        )
+
+
     # Main content
     if not buyer_name:
         st.info("👈 Please enter your name in the sidebar to begin")
@@ -574,7 +515,6 @@ def main():
         results_df = load_results_data()
         
         if results_df is None or results_df.empty:
-            st.warning("⚠️ No classification results found. Please ensure results.xlsx is in the data folder.")
             return
         
         # Search interface
@@ -598,7 +538,7 @@ def main():
                 st.session_state.current_material = material.to_dict()
                 st.session_state.show_top5 = False
                 st.session_state.show_all = False
-                st.success(f"✅ Found material: {material['Material_Code']}")
+                st.success(f"✅ Found material: {material['MaterialCode']}")
             else:
                 st.error(f"❌ No material found matching '{search_query}'")
                 st.info("💡 Tip: Try searching by material code or a few keywords from the description")
@@ -613,13 +553,13 @@ def main():
             st.markdown(f"""
             <div class="material-card">
                 <div class="material-header">
-                    📦 Material: {material['Material_Code']}
+                    📦 Material: {material.get('MaterialCode', 'N/A')}
                 </div>
                 <div class="material-detail">
-                    <strong>Description:</strong> {material['Material_Description']}
+                    <strong>Description:</strong> {material.get('MaterialDescription', 'N/A')}
                 </div>
-                {f'<div class="material-detail"><strong>Item Detail:</strong> {material["Item_Detail"]}</div>' if pd.notna(material.get('Item_Detail')) else ''}
-                {f'<div class="material-detail"><strong>Material Group:</strong> {material["Matl_Group"]}</div>' if pd.notna(material.get('Matl_Group')) else ''}
+                {f'<div class="material-detail"><strong>Item Detail:</strong> {material.get("ItemDetail", "N/A")}</div>' if pd.notna(material.get('ItemDetail')) else ''}
+                {f'<div class="material-detail"><strong>Material Group:</strong> {material.get("MatlGroup", "N/A")}</div>' if pd.notna(material.get('MatlGroup')) else ''}
             </div>
             """, unsafe_allow_html=True)
             
@@ -633,7 +573,7 @@ def main():
                 <div class="code-box">
                     <div class="code-title">Final UNSPSC Code</div>
                     <div style="font-size: 1.3rem; margin: 0.75rem 0;">
-                        <strong>{material['Commodity_Code']}</strong> - {material['Final_Recommendation']}
+                        <strong>{material.get('CommodityCode', 'N/A')}</strong> - {material.get('FinalRecommendation', 'N/A')}
                     </div>
                     <div>
                         <strong>Segment:</strong> {material.get('Segment', 'N/A')}<br>
@@ -646,8 +586,8 @@ def main():
             with col2:
                 st.markdown("**Classification Details**")
                 st.write(f"**Confidence:** {format_confidence(material.get('Confidence', 0))}", unsafe_allow_html=True)
-                st.write(f"**Decision Rule:** {material.get('Decision_Rule', 'N/A').replace('_', ' ').title()}")
-                st.write(f"**Processing Time:** {material.get('Processing_Time', 0):.1f}s")
+                st.write(f"**Decision Rule:** {material.get('DecisionRule', 'N/A').replace('_', ' ').title()}")
+                st.write(f"**Processing Time:** {material.get('ProcessingTime', 0):.1f}s")
             
             # Action buttons
             st.markdown("### ✅ Your Decision")
@@ -656,16 +596,16 @@ def main():
             
             with col1:
                 if st.button("✅ Confirm This Code", type="primary", use_container_width=True, 
-                           key="confirm_main"):
+                             key="confirm_main"):
                     comments = st.session_state.get('buyer_comments', '')
                     if save_confirmed_material(
                         material,
-                        str(material['Commodity_Code']),
-                        material['Final_Recommendation'],
+                        str(material.get('CommodityCode', 'N/A')),
+                        material.get('FinalRecommendation', 'N/A'),
                         buyer_name,
                         comments
                     ):
-                        st.success(f"✅ Material {material['Material_Code']} confirmed!")
+                        st.success(f"✅ Material {material.get('MaterialCode', 'N/A')} confirmed!")
                         st.balloons()
                         st.session_state.current_material = None
                         st.rerun()
@@ -691,7 +631,7 @@ def main():
                     if st.button("⚠️ Flag This Material", use_container_width=True, key="flag_material"):
                         comments = st.session_state.get('buyer_comments', '')
                         if save_flagged_material(material, flag_reason, buyer_name, comments):
-                            st.warning(f"⚠️ Material {material['Material_Code']} flagged for review")
+                            st.warning(f"⚠️ Material {material.get('MaterialCode', 'N/A')} flagged for review")
                             st.session_state.current_material = None
                             st.rerun()
             
@@ -709,7 +649,7 @@ def main():
                 st.markdown("---")
                 st.markdown("### 📊 Top 5 Alternative Recommendations")
                 
-                top5 = parse_recommendations(material.get('Top_5_Recommendations', ''))
+                top5 = parse_recommendations(material.get('Top5Recommendations', ''))
                 
                 if top5:
                     for i, (code, title) in enumerate(top5, 1):
@@ -744,7 +684,7 @@ def main():
                 st.markdown("---")
                 st.markdown("### 📋 All Ranked Commodities")
                 
-                all_ranked = parse_recommendations(material.get('All_Commodities_Ranked', ''))
+                all_ranked = parse_recommendations(material.get('AllCommoditiesRanked', ''))
                 
                 if all_ranked:
                     # Display in expandable sections of 10
@@ -778,8 +718,7 @@ def main():
         st.markdown("Enter details for a material not in the current classification results")
         
         if not PIPELINE_AVAILABLE:
-            st.error("❌ Classification pipeline is not available. Please check the installation guide.")
-            st.info("Ensure unspsc_classifier_v10.py is in the same directory as this portal.")
+            st.error("❌ Classification pipeline is not available. Please ensure unspsc_classifier_v10.py is in the 'unspsc-classifier-code' folder.")
             return
         
         # Input form
@@ -824,7 +763,7 @@ def main():
             if not new_material_code or not new_material_desc:
                 st.error("❌ Please provide both Material Code and Material Description")
             else:
-                # Check if material already exists
+                # Check if material already exists (using simplified search)
                 results_df = load_results_data()
                 if results_df is not None:
                     existing = search_material(results_df, new_material_code)
@@ -848,7 +787,8 @@ def main():
             result = st.session_state.classification_result
             
             st.markdown("---")
-            display_classification_result(result)
+            # Note: display_classification_result uses the ClassificationResult object structure
+            display_classification_result(result) 
             
             # Confirmation section
             st.markdown("---")
@@ -867,12 +807,12 @@ def main():
             with col2:
                 st.markdown("<br>", unsafe_allow_html=True)
                 if st.button("✅ Confirm & Save", type="primary", use_container_width=True, key="confirm_new"):
-                    # Prepare material data
+                    # Prepare material data dictionary to pass to save function
                     material_data = {
-                        'Material_Code': new_material_code,
-                        'Material_Description': new_material_desc,
-                        'Final_Recommendation': result.final_recommendation,
-                        'Commodity_Code': result.commodity_code,
+                        'MaterialCode': new_material_code,
+                        'MaterialDescription': new_material_desc,
+                        'FinalRecommendation': result.final_recommendation,
+                        'CommodityCode': result.commodity_code,
                         'Segment': result.segment,
                         'Family': result.family,
                         'Class': result.class_name,
@@ -890,7 +830,7 @@ def main():
                         st.balloons()
                         st.session_state.classification_result = None
                         st.rerun()
-                
+            
                 if st.button("❌ Cancel", use_container_width=True, key="cancel_new"):
                     st.session_state.classification_result = None
                     st.rerun()
