@@ -19,6 +19,33 @@ from typing import Optional, Dict, List, Tuple
 import json
 
 # =============================================================================
+# Pipeline Import (CRITICAL FIX)
+# =============================================================================
+
+# Define a placeholder class in case the real pipeline file cannot be imported.
+# This satisfies Python's need for the type hint 'ClassificationResult'.
+class ClassificationResult:
+    """Placeholder class for ClassificationResult when pipeline fails to load."""
+    def __init__(self):
+        pass
+
+# Add the directory containing the pipeline to the path
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+# Try to import the pipeline
+try:
+    # We only need to import the pipeline class and the data class
+    from unspsc_classifier_v10 import UNSPSCPipeline
+    from unspsc_classifier_v10 import ClassificationResult # Re-import the real class
+    PIPELINE_AVAILABLE = True
+except ImportError as e:
+    PIPELINE_AVAILABLE = False
+    logging.warning(f"Pipeline not available - real-time classification disabled: {e}")
+
+# Note: The `setup_logging` import was removed as it's not strictly needed 
+# by the portal script itself.
+
+# =============================================================================
 # FILE PATH RESOLUTION (CRITICAL FIX)
 # =============================================================================
 # 1. Get the directory where the current script resides (e.g., /repo_root/unspsc-classifier-code)
